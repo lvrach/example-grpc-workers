@@ -26,7 +26,6 @@ type server struct {
 	once sync.Once
 
 	mu      sync.Mutex
-	pending map[int64]task
 	seqID   int64
 	req     chan task
 }
@@ -39,7 +38,6 @@ type task struct {
 
 func (s *server) init() {
 	s.once.Do(func() {
-		s.pending = make(map[int64]task)
 		s.seqID = 0
 		s.req = make(chan task, 10)
 	})
@@ -49,50 +47,34 @@ func (s *server) Pull(stream pb.WorkerRouter_PullServer) error {
 	s.init()
 	fmt.Println("pull connection")
 
-	var activeID int64
 	for {
-		_, err := stream.Recv()
-		if err == io.EOF {
-			s.pending[activeID].resp <- stream.Context().Err()
-			return nil
-		} else if err != nil {
-			return err
-		}
-		activeID = 0
-
 		select {
 		case <-stream.Context().Done():
-			fmt.Println("close connection")
-			s.pending[activeID].resp <- stream.Context().Err()
+			fmt.Println("closed connection")
 			return nil
 		case t := <-s.req:
-			s.mu.Lock()
-			s.pending[t.id] = t
-			activeID = t.id
-			s.mu.Unlock()
-
 			err := stream.Send(&pb.Task{Id: t.id, Payload: t.pb.Payload})
 			if err != nil {
 				return err
 			}
+
+			answer, err := stream.Recv()
+			if err == io.EOF {
+				t.resp <- stream.Context().Err()
+				return nil
+			} else if err != nil {
+				t.resp <- err
+				return err
+			}
+			if answer.Error != "" {
+				t.resp <- fmt.Errorf(answer.Error)
+			} else {
+				t.resp <- nil
+			}
+
 		}
 
 	}
-}
-
-func (s *server) Complete(ctx context.Context, t *pb.TaskComplete) (*pb.Empty, error) {
-	s.init()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	var err error
-	if t.Error != "" {
-		err = fmt.Errorf("%s", t.Error)
-	}
-	s.pending[t.Id].resp <- err
-
-	delete(s.pending, t.Id)
-	return &pb.Empty{}, nil
 }
 
 func (s *server) Request(ctx context.Context, payload string) error {
@@ -123,7 +105,7 @@ func main() {
 	// FIXME: Added for benchmarking
 	go func() {
 		s := time.Now()
-		for i := 0; i < 1_000_000; i++ { //2m6.123736752s
+		for i := 0; i < 1_00_000; i++ { //2m6.123736752s
 			err := workShard.Request(context.Background(), " ")
 			if err != nil {
 				fmt.Println(err)

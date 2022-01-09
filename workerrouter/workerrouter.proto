@@ -19,7 +19,7 @@ option go_package = "github.com/lvrach/grpc-workers/workerrouter";
 package workerrouter;
 
 service WorkerRouter {
-  rpc Pull(stream Empty) returns (stream Task) {}
+  rpc Pull(stream TaskComplete) returns (stream Task) {}
 
   rpc Complete(TaskComplete) returns (Empty) {}
 }

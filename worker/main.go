@@ -21,7 +21,6 @@ func process(ctx context.Context, c pb.WorkerRouterClient) error {
 	}
 
 	for {
-		stream.Send(&pb.Empty{})
 
 		t, err := stream.Recv()
 		if err != nil {
@@ -30,7 +29,7 @@ func process(ctx context.Context, c pb.WorkerRouterClient) error {
 
 		time.Sleep(time.Millisecond)
 
-		_, err = c.Complete(ctx, &pb.TaskComplete{
+		err = stream.Send(&pb.TaskComplete{
 			Id: t.Id,
 		})
 		if err != nil {
